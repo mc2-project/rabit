@@ -17,6 +17,7 @@ namespace rabit {
 namespace engine {
 // constructor
 AllreduceBase::AllreduceBase(void) {
+    LOG(INFO) << "INIT";
   tracker_uri = "NULL";
   tracker_port = 9000;
   host_uri = "";
@@ -52,6 +53,7 @@ AllreduceBase::AllreduceBase(void) {
 
 // initialization function
 void AllreduceBase::Init(int argc, char* argv[]) {
+    LOG(INFO) << "INIT";
   // setup from enviroment variables
   // handler to get variables from env
   for (size_t i = 0; i < env_vars.size(); ++i) {
@@ -128,18 +130,28 @@ void AllreduceBase::Shutdown(void) {
 
   if (tracker_uri == "NULL") return;
   // notify tracker rank i have shutdown
+#ifdef __TLS__ // TLS socket
+  utils::TLSClient tracker = this->ConnectTracker();
+#else
   utils::TCPSocket tracker = this->ConnectTracker();
+#endif
   tracker.SendStr(std::string("shutdown"));
   tracker.Close();
   // close listening sockets
   sock_listen.Close();
+#ifndef __TLS__ // TCP sockets
   utils::TCPSocket::Finalize();
+#endif
 }
 void AllreduceBase::TrackerPrint(const std::string &msg) {
   if (tracker_uri == "NULL") {
     utils::Printf("%s", msg.c_str()); return;
   }
+#ifdef __TLS__ // TLS socket
+  utils::TLSClient tracker = this->ConnectTracker();
+#else
   utils::TCPSocket tracker = this->ConnectTracker();
+#endif
   tracker.SendStr(std::string("print"));
   tracker.SendStr(msg);
   tracker.Close();
@@ -195,10 +207,18 @@ void AllreduceBase::SetParam(const char *name, const char *val) {
  * \brief initialize connection to the tracker
  * \return a socket that initializes the connection
  */
+#ifdef __TLS__ // TLS socket
+utils::TLSClient AllreduceBase::ConnectTracker(void) const {
+#else
 utils::TCPSocket AllreduceBase::ConnectTracker(void) const {
+#endif
   int magic = kMagic;
   // get information from tracker
+#ifdef __TLS__ // TLS socket
+  utils::TLSClient tracker;
+#else
   utils::TCPSocket tracker;
+#endif
   tracker.Create();
 
   int retry = 0;
@@ -238,11 +258,16 @@ utils::TCPSocket AllreduceBase::ConnectTracker(void) const {
  *   this function is also used when the engine start up
  */
 void AllreduceBase::ReConnectLinks(const char *cmd) {
+    LOG(INFO) << "Reconnecting";
   // single node mode
   if (tracker_uri == "NULL") {
     rank = 0; world_size = 1; return;
   }
+#ifdef __TLS__ // TLS socket
+  utils::TLSClient tracker = this->ConnectTracker();
+#else
   utils::TCPSocket tracker = this->ConnectTracker();
+#endif
   tracker.SendStr(std::string(cmd));
 
   // the rank of previous link, next link in ring
@@ -280,9 +305,11 @@ void AllreduceBase::ReConnectLinks(const char *cmd) {
     }
     // create listening socket
     sock_listen.Create();
+#ifndef __TLS__ // TCP socket
     sock_listen.SetKeepAlive(true);
     // http://deepix.github.io/2016/10/21/tcprst.html
     sock_listen.SetLinger(0);
+#endif
     // [slave_port, slave_port+1 .... slave_port + newrank ...slave_port + nport_trial)
     // work around processes bind to same port without set reuse option,
     // start explore from slave_port + newrank towards end
@@ -291,7 +318,9 @@ void AllreduceBase::ReConnectLinks(const char *cmd) {
     if (port == -1) sock_listen.TryBindHost(slave_port, newrank% nport_trial + slave_port);
 
     utils::Check(port != -1, "ReConnectLink fail to bind the ports specified");
+#ifndef __TLS__ // TCP socket
     sock_listen.Listen();
+#endif
   }
 
   // get number of to connect and number of to accept nodes from tracker
@@ -319,6 +348,7 @@ void AllreduceBase::ReConnectLinks(const char *cmd) {
            sizeof(num_accept), "ReConnectLink failure 8");
     num_error = 0;
     for (int i = 0; i < num_conn; ++i) {
+      LOG(INFO) << getpid() << "Connecting";
       LinkRecord r;
       int hport, hrank;
       std::string hname;
@@ -347,6 +377,7 @@ void AllreduceBase::ReConnectLinks(const char *cmd) {
         }
       }
       if (!match) all_links.push_back(r);
+      LOG(INFO) << getpid() << "Done Connecting";
     }
     Assert(tracker.SendAll(&num_error, sizeof(num_error)) == sizeof(num_error),
            "ReConnectLink failure 14");
@@ -358,8 +389,13 @@ void AllreduceBase::ReConnectLinks(const char *cmd) {
   tracker.Close();
   // listen to incoming links
   for (int i = 0; i < num_accept; ++i) {
+    LOG(INFO) << getpid() << "Accepting";
     LinkRecord r;
+#ifdef __TLS__ // TLS socket
+    sock_listen.Accept(&r.sock);
+#else
     r.sock = sock_listen.Accept();
+#endif
     Assert(r.sock.SendAll(&rank, sizeof(rank)) == sizeof(rank),
            "ReConnectLink failure 15");
     Assert(r.sock.RecvAll(&r.rank, sizeof(r.rank)) == sizeof(r.rank),
@@ -373,6 +409,7 @@ void AllreduceBase::ReConnectLinks(const char *cmd) {
       }
     }
     if (!match) all_links.push_back(r);
+    LOG(INFO) << getpid() << "Done accepting";
   }
 
   this->parent_index = -1;
@@ -381,8 +418,10 @@ void AllreduceBase::ReConnectLinks(const char *cmd) {
   for (size_t i = 0; i < all_links.size(); ++i) {
     utils::Assert(!all_links[i].sock.BadSocket(), "ReConnectLink: bad socket");
     // set the socket to non-blocking mode, enable TCP keepalive
+#ifndef __TLS__ // TCP socket
     all_links[i].sock.SetNonBlock(true);
     all_links[i].sock.SetKeepAlive(true);
+#endif
     if (tree_neighbors.count(all_links[i].rank) != 0) {
       if (all_links[i].rank == parent_rank) {
         parent_index = static_cast<int>(tree_links.plinks.size());

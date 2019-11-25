@@ -13,6 +13,7 @@ add_library(rabit_empty src/engine_empty.cc src/c_api.cc)
 set(rabit_libs rabit rabit_base rabit_empty)
 
 set_target_properties(rabit rabit_base rabit_empty PROPERTIES CXX_STANDARD 11 CXX_STANDARD_REQUIRED ON)
+target_link_libraries(rabit mbedtls mbedcrypto mbedx509)
 
 if(RABIT_BUILD_MPI)
   find_package(MPI REQUIRED)

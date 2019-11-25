@@ -9,6 +9,7 @@
  *
  * \author Tianqi Chen, Ignacio Cano, Tianyi Zhou
  */
+#define __TLS__
 #ifndef RABIT_ALLREDUCE_BASE_H_
 #define RABIT_ALLREDUCE_BASE_H_
 
@@ -18,6 +19,10 @@
 #include "../include/rabit/internal/utils.h"
 #include "../include/rabit/internal/engine.h"
 #include "./socket.h"
+
+#ifdef __TLS__ // TLS socket
+#include "./tlssocket.h"
+#endif // __TLS__
 
 namespace MPI {
 // MPI data type to be compatible with existing MPI interface
@@ -235,7 +240,11 @@ class AllreduceBase : public IEngine {
   };
   /*! \brief translate errno to return type */
   inline static ReturnType Errno2Return() {
+#ifdef __TLS__ // TLS socket
+    int errsv = utils::TLSConnection::GetLastError();
+#else
     int errsv = utils::Socket::GetLastError();
+#endif // __TLS__
     if (errsv == EAGAIN || errsv == EWOULDBLOCK || errsv == 0) return kSuccess;
 #ifdef _WIN32
     if (errsv == WSAEWOULDBLOCK) return kSuccess;
@@ -248,7 +257,11 @@ class AllreduceBase : public IEngine {
   struct LinkRecord {
    public:
     // socket to get data from/to link
+#ifdef __TLS__ // TLS socket
+    utils::TLSClient sock;
+#else
     utils::TCPSocket sock;
+#endif // __TLS__
     // rank of the node in this link
     int rank;
     // size of data readed from link
@@ -262,6 +275,9 @@ class AllreduceBase : public IEngine {
     // constructor
     LinkRecord(void)
         : buffer_head(NULL), buffer_size(0) {
+#ifdef __TLS__ // init TLS socket
+          sock.Create();
+#endif // __TLS__
     }
     // initialize buffer
     inline void InitBuffer(size_t type_nbytes, size_t count,
@@ -363,7 +379,11 @@ class AllreduceBase : public IEngine {
    * \brief initialize connection to the tracker
    * \return a socket that initializes the connection
    */
+#ifdef __TLS__ // TLS socket
+  utils::TLSClient ConnectTracker(void) const;
+#else
   utils::TCPSocket ConnectTracker(void) const;
+#endif // __TLS__
   /*!
    * \brief connect to the tracker to fix the the missing links
    *   this function is also used when the engine start up
@@ -522,7 +542,11 @@ class AllreduceBase : public IEngine {
   // connect retry time
   int connect_retry;
   // backdoor listening peer connection
+#ifdef __TLS__ // TLS socket
+  utils::TLSServer sock_listen;
+#else
   utils::TCPSocket sock_listen;
+#endif
   // backdoor port
   int port = 0;
 };
