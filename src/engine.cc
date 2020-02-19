@@ -11,7 +11,7 @@
 #define NOMINMAX
 
 #include <memory>
-#include "../include/rabit/internal/engine.h"
+#include <rabit/internal/engine.h>
 #include "./allreduce_base.h"
 #include "./allreduce_robust.h"
 #include "./thread_local.h"
