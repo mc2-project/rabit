@@ -11,7 +11,7 @@
 #ifdef __SGX__
 // #include <openenclave/host.h>
 #include "../../../build/host/xgboost_u.h"
-#include "../../../enclave/enclave.h"
+#include <enclave/enclave.h>
 #endif
 
 namespace rabit {
