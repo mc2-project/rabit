@@ -170,23 +170,16 @@ struct WriteWrapper : public Serializable {
 
 
 void RabitInit(int argc, char *argv[]) {
-#ifdef __SGX__
   enclave_RabitInit(Enclave::getInstance().getEnclave(), argc, argv);
-#else  
-  rabit::Init(argc, argv);
-#endif
 }
 
 void RabitFinalize() {
-#ifdef __SGX__
   enclave_RabitFinalize(Enclave::getInstance().getEnclave());
-#else
-  rabit::Finalize();
-#endif
 }
 
 int RabitGetRank() {
-  return rabit::GetRank();
+  enclave_RabitGetRank(Enclave::getInstance().getEnclave(), &Enclave::getInstance().enclave_ret);
+  return Enclave::getInstance().enclave_ret;
 }
 
 int RabitGetWorldSize() {
@@ -194,21 +187,12 @@ int RabitGetWorldSize() {
 }
 
 int RabitIsDistributed() {
-#ifdef __SGX__
   enclave_RabitIsDistributed(Enclave::getInstance().getEnclave(), &Enclave::getInstance().enclave_ret);
   return Enclave::getInstance().enclave_ret;
-#else
-  return rabit::IsDistributed();
-#endif
 }
 
 void RabitTrackerPrint(const char *msg) {
-#ifdef __SGX__
   enclave_RabitTrackerPrint(Enclave::getInstance().getEnclave(), msg);
-#else
-  std::string m(msg);
-  rabit::TrackerPrint(m);
-#endif
 }
 
 void RabitGetProcessorName(char *out_name,
