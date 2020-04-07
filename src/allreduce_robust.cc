@@ -8,12 +8,14 @@
 #define _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_DEPRECATE
 #define NOMINMAX
-#include <limits>
-#include <utility>
 #include <rabit/internal/io.h>
 #include <rabit/internal/utils.h>
 #include <rabit/internal/engine.h>
 #include <rabit/internal/rabit-inl.h>
+
+#include <limits>
+#include <utility>
+
 #include "./allreduce_robust.h"
 
 namespace rabit {

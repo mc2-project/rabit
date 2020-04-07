@@ -12,11 +12,13 @@
 #ifndef RABIT_ALLREDUCE_BASE_H_
 #define RABIT_ALLREDUCE_BASE_H_
 
+#include <rabit/internal/utils.h>
+#include <rabit/internal/engine.h>
+
 #include <vector>
 #include <string>
 #include <algorithm>
-#include <rabit/internal/utils.h>
-#include <rabit/internal/engine.h>
+
 #include "./socket.h"
 
 namespace MPI {

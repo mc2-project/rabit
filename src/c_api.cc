@@ -3,15 +3,18 @@
 #define _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_DEPRECATE
 
-#include <cstring>
-#include <string>
-#include "../include/rabit/rabit.h"
-#include "../include/rabit/c_api.h"
+#include <rabit/rabit.h>
+#include <rabit/c_api.h>
 
 #ifdef __SGX__
-// #include <openenclave/host.h>
-#include "../../../build/host/xgboost_u.h"
 #include <enclave/enclave.h>
+#endif
+
+#include <cstring>
+#include <string>
+
+#ifdef __SGX__
+#include "xgboost_u.h"
 #endif
 
 namespace rabit {
@@ -178,7 +181,8 @@ void RabitFinalize() {
 }
 
 int RabitGetRank() {
-  enclave_RabitGetRank(Enclave::getInstance().getEnclave(), &Enclave::getInstance().enclave_ret);
+  enclave_RabitGetRank(Enclave::getInstance().getEnclave(),
+      &Enclave::getInstance().enclave_ret);
   return Enclave::getInstance().enclave_ret;
 }
 
@@ -187,7 +191,8 @@ int RabitGetWorldSize() {
 }
 
 int RabitIsDistributed() {
-  enclave_RabitIsDistributed(Enclave::getInstance().getEnclave(), &Enclave::getInstance().enclave_ret);
+  enclave_RabitIsDistributed(Enclave::getInstance().getEnclave(),
+      &Enclave::getInstance().enclave_ret);
   return Enclave::getInstance().enclave_ret;
 }
 

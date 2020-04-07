@@ -10,8 +10,8 @@
 #define _CRT_SECURE_NO_DEPRECATE
 #define NOMINMAX
 
-#include <memory>
 #include <rabit/internal/engine.h>
+#include <memory>
 #include "./allreduce_base.h"
 #include "./allreduce_robust.h"
 #include "./thread_local.h"
