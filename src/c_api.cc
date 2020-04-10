@@ -192,7 +192,8 @@ int RabitIsDistributed() {
 }
 
 void RabitTrackerPrint(const char *msg) {
-  enclave_RabitTrackerPrint(Enclave::getInstance().getEnclave(), msg);
+  std::string m(msg);
+  rabit::TrackerPrint(m);
 }
 
 void RabitGetProcessorName(char *out_name,
