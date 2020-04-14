@@ -167,7 +167,11 @@ struct WriteWrapper : public Serializable {
 
 
 void RabitInit(int argc, char *argv[]) {
-  enclave_RabitInit(Enclave::getInstance().getEnclave(), argc, argv);
+  size_t arg_lengths[argc];
+  for (int i = 0; i < argc; i++) {
+    arg_lengths[i] = strlen(argv[i]);
+  }
+  enclave_RabitInit(Enclave::getInstance().getEnclave(), argc, argv, arg_lengths);
 }
 
 void RabitFinalize() {
