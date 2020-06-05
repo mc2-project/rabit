@@ -18,6 +18,7 @@
 #include "rabit/internal/utils.h"
 #include "rabit/internal/engine.h"
 #include "rabit/internal/socket.h"
+#include "rabit/internal/ssl_socket.h"
 
 #ifdef RABIT_CXXTESTDEFS_H
 #define private   public
@@ -47,6 +48,8 @@ class AllreduceBase : public IEngine {
   virtual bool Init(int argc, char* argv[]);
   // shutdown the engine
   virtual bool Shutdown(void);
+  // Init ssl context.
+  virtual void InitSSL();
   /*!
    * \brief set parameters to the engine
    * \param name parameter name
@@ -265,7 +268,7 @@ class AllreduceBase : public IEngine {
   struct LinkRecord {
    public:
     // socket to get data from/to link
-    utils::TCPSocket sock;
+    utils::SSLTcpSocket* sock;
     // rank of the node in this link
     int rank;
     // size of data readed from link
@@ -316,10 +319,10 @@ class AllreduceBase : public IEngine {
       nmax = std::min(nmax, buffer_size - ngap);
       nmax = std::min(nmax, buffer_size - offset);
       if (nmax == 0) return kSuccess;
-      ssize_t len = sock.Recv(buffer_head + offset, nmax);
+      ssize_t len = sock->SSLRecv(buffer_head + offset, nmax);
       // length equals 0, remote disconnected
       if (len == 0) {
-        sock.Close(); return kRecvZeroLen;
+        sock->Close(); return kRecvZeroLen;
       }
       if (len == -1) return Errno2Return();
       size_read += static_cast<size_t>(len);
@@ -335,10 +338,10 @@ class AllreduceBase : public IEngine {
     inline ReturnType ReadToArray(void *recvbuf_, size_t max_size) {
       if (max_size == size_read) return kSuccess;
       char *p = static_cast<char*>(recvbuf_);
-      ssize_t len = sock.Recv(p + size_read, max_size - size_read);
+      ssize_t len = sock->SSLRecvAll(p + size_read, max_size - size_read);
       // length equals 0, remote disconnected
       if (len == 0) {
-        sock.Close(); return kRecvZeroLen;
+        sock->Close(); return kRecvZeroLen;
       }
       if (len == -1) return Errno2Return();
       size_read += static_cast<size_t>(len);
@@ -352,7 +355,7 @@ class AllreduceBase : public IEngine {
      */
     inline ReturnType WriteFromArray(const void *sendbuf_, size_t max_size) {
       const char *p = static_cast<const char*>(sendbuf_);
-      ssize_t len = sock.Send(p + size_write, max_size - size_write);
+      ssize_t len = sock->SSLSend(p + size_write, max_size - size_write);
       if (len == -1) return Errno2Return();
       size_write += static_cast<size_t>(len);
       return kSuccess;
@@ -539,13 +542,19 @@ class AllreduceBase : public IEngine {
   // connect retry time
   int connect_retry;
   // backdoor listening peer connection
-  utils::TCPSocket sock_listen;
+  utils::SSLTcpSocket sock_listen;
   // backdoor port
   int port = 0;
   // enable bootstrap cache 0 false 1 true
   int rabit_bootstrap_cache = 0;
   // enable detailed logging
   int rabit_debug = 0;
+  // root_cert for ssl client
+  std::string root_cert_path;
+  // cert_chain for ssl server
+  std::string cert_chain_path;
+  // private_key for ssl server
+  std::string private_key_path;
 };
 }  // namespace engine
 }  // namespace rabit
