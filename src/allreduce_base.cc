@@ -11,6 +11,8 @@
 #include <map>
 #include <cstring>
 #include "allreduce_base.h"
+#include <fstream>
+#include "rabit/internal/ssl_context_manager.h"
 
 namespace rabit {
 
@@ -19,6 +21,18 @@ namespace utils {
 }
 
 namespace engine {
+
+namespace {
+
+std::string ReadAsString(const char *path) {
+  std::ifstream file(path);
+  CHECK(file.is_open());
+  return std::string(std::istreambuf_iterator<char>(file),
+                     std::istreambuf_iterator<char>());
+}
+
+}  // namespace
+
 // constructor
 AllreduceBase::AllreduceBase(void) {
   tracker_uri = "NULL";
@@ -39,7 +53,16 @@ AllreduceBase::AllreduceBase(void) {
   dmlc_role = "worker";
   this->SetParam("rabit_reduce_buffer", "256MB");
   // setup possible enviroment variable of interest
-  // include dmlc support direct variables
+  
+  // ssl context
+  env_vars.push_back("rabit_root_cert_path");
+  env_vars.push_back("rabit_cert_chain_path");
+  env_vars.push_back("rabit_private_key_path");
+  // default certs position
+  this->SetParam("rabit_root_cert_path", "certs/root_cert.crt");
+  this->SetParam("rabit_cert_chain_path", "certs/cert_chain.crt");
+  this->SetParam("rabit_private_key_path", "certs/private_key.pem");
+  // also include dmlc support direct variables
   env_vars.push_back("DMLC_TASK_ID");
   env_vars.push_back("DMLC_ROLE");
   env_vars.push_back("DMLC_NUM_ATTEMPT");
@@ -47,6 +70,12 @@ AllreduceBase::AllreduceBase(void) {
   env_vars.push_back("DMLC_TRACKER_PORT");
   env_vars.push_back("DMLC_WORKER_CONNECT_RETRY");
   env_vars.push_back("DMLC_WORKER_STOP_PROCESS_ON_ERROR");
+}
+
+void AllreduceBase::InitSSL() {
+  ::rabit::utils::SSLContextManager::instance()->LoadCertAndKey(
+      ReadAsString(cert_chain_path.c_str()),
+      ReadAsString(private_key_path.c_str()), root_cert_path);
 }
 
 // initialization function
@@ -110,6 +139,8 @@ bool AllreduceBase::Init(int argc, char* argv[]) {
 
   // clear the setting before start reconnection
   this->rank = -1;
+  // Init ssl context.
+  InitSSL();
   //---------------------
   // start socket
   utils::Socket::Startup();
@@ -213,6 +244,15 @@ void AllreduceBase::SetParam(const char *name, const char *val) {
   }
   if (!strcmp(name, "rabit_debug")) {
     rabit_debug = atoi(val);
+  }
+  if (!strcmp(name, "rabit_root_cert_path")) {
+    root_cert_path = val;
+  }
+  if (!strcmp(name, "rabit_cert_chain_path")) {
+    cert_chain_path = val;
+  }
+  if (!strcmp(name, "rabit_private_key_path")) {
+    private_key_path = val;
   }
 }
 /*!
@@ -358,15 +398,15 @@ bool AllreduceBase::ReConnectLinks(const char *cmd) {
                "ReConnectLink failure 10");
 
         r.sock.Create();
-        if (!r.sock.Connect(utils::SockAddr(hname.c_str(), hport))) {
+        if (!r.sock.SSLConnect(utils::SockAddr(hname.c_str(), hport))) {
           num_error += 1;
           r.sock.Close();
           continue;
         }
-        Assert(r.sock.SendAll(&rank, sizeof(rank)) == sizeof(rank),
-               "ReConnectLink failure 12");
-        Assert(r.sock.RecvAll(&r.rank, sizeof(r.rank)) == sizeof(r.rank),
-               "ReConnectLink failure 13");
+        Assert(r.sock.SSLSendAll(&rank, sizeof(rank)) == sizeof(rank),
+            "ReConnectLink failure 12");
+        Assert(r.sock.SSLRecvAll(&r.rank, sizeof(r.rank)) == sizeof(r.rank),
+            "ReConnectLink failure 13");
         utils::Check(hrank == r.rank,
                      "ReConnectLink failure, link rank inconsistent");
         bool match = false;
@@ -382,29 +422,27 @@ bool AllreduceBase::ReConnectLinks(const char *cmd) {
         if (!match) all_links.push_back(r);
       }
       Assert(tracker.SendAll(&num_error, sizeof(num_error)) == sizeof(num_error),
-             "ReConnectLink failure 14");
+          "ReConnectLink failure 14");
     } while (num_error != 0);
     // send back socket listening port to tracker
     Assert(tracker.SendAll(&port, sizeof(port)) == sizeof(port),
-           "ReConnectLink failure 14");
+        "ReConnectLink failure 14");
     // close connection to tracker
     tracker.Close();
     // listen to incoming links
     for (int i = 0; i < num_accept; ++i) {
       LinkRecord r;
-      r.sock = sock_listen.Accept();
-      Assert(r.sock.SendAll(&rank, sizeof(rank)) == sizeof(rank),
-             "ReConnectLink failure 15");
-      Assert(r.sock.RecvAll(&r.rank, sizeof(r.rank)) == sizeof(r.rank),
-             "ReConnectLink failure 15");
+      r.sock = sock_listen.SSLAccept();
+      Assert(r.sock.SSLSendAll(&rank, sizeof(rank)) == sizeof(rank),
+          "ReConnectLink failure 15");
+      Assert(r.sock.SSLRecvAll(&r.rank, sizeof(r.rank)) == sizeof(r.rank),
+          "ReConnectLink failure 15");
       bool match = false;
       for (size_t i = 0; i < all_links.size(); ++i) {
         if (all_links[i].rank == r.rank) {
           utils::Assert(all_links[i].sock.IsClosed(),
-                        "Override a link that is active");
-          all_links[i].sock = r.sock;
-          match = true;
-          break;
+              "Override a link that is active");
+          all_links[i].sock = r.sock; match = true; break;
         }
       }
       if (!match) all_links.push_back(r);
@@ -592,7 +630,7 @@ AllreduceBase::TryAllreduceTree(void *sendrecvbuf_,
       // pass message up to parent, can pass data that are already been reduced
       if (size_up_out < size_up_reduce) {
         ssize_t len = links[parent_index].sock.
-            Send(sendrecvbuf + size_up_out, size_up_reduce - size_up_out);
+            SSLSend(sendrecvbuf + size_up_out, size_up_reduce - size_up_out);
         if (len != -1) {
           size_up_out += static_cast<size_t>(len);
         } else {
@@ -606,7 +644,7 @@ AllreduceBase::TryAllreduceTree(void *sendrecvbuf_,
       if (watcher.CheckRead(links[parent_index].sock) &&
           total_size > size_down_in) {
         ssize_t len = links[parent_index].sock.
-            Recv(sendrecvbuf + size_down_in, total_size - size_down_in);
+            SSLRecv(sendrecvbuf + size_down_in, total_size - size_down_in);
         if (len == 0) {
           links[parent_index].sock.Close();
           return ReportError(&links[parent_index], kRecvZeroLen);
@@ -788,7 +826,7 @@ AllreduceBase::TryAllgatherRing(void *sendrecvbuf_, size_t total_size,
       if (start + size > total_size) {
         size = total_size - start;
       }
-      ssize_t len = next.sock.Recv(sendrecvbuf + start, size);
+      ssize_t len = next.sock.SSLRecv(sendrecvbuf + start, size);
       if (len != -1) {
         read_ptr += static_cast<size_t>(len);
       } else {
@@ -802,7 +840,7 @@ AllreduceBase::TryAllgatherRing(void *sendrecvbuf_, size_t total_size,
       if (start + size > total_size) {
         size = total_size - start;
       }
-      ssize_t len = prev.sock.Send(sendrecvbuf + start, size);
+      ssize_t len = prev.sock.SSLSend(sendrecvbuf + start, size);
       if (len != -1) {
         write_ptr += static_cast<size_t>(len);
       } else {
@@ -905,7 +943,7 @@ AllreduceBase::TryReduceScatterRing(void *sendrecvbuf_,
       if (start + size > total_size) {
         size = total_size - start;
       }
-      ssize_t len = prev.sock.Send(sendrecvbuf + start, size);
+      ssize_t len = prev.sock.SSLSend(sendrecvbuf + start, size);
       if (len != -1) {
         write_ptr += static_cast<size_t>(len);
       } else {

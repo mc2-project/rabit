@@ -491,6 +491,8 @@ AllreduceRobust::ReturnType AllreduceRobust::TryResetLinks(void) {
     for (int i = 0; i < nlink; ++i) {
       if (all_links[i].sock.BadSocket()) continue;
       if (all_links[i].size_write == 0) {
+        // OOB data does not contains data.
+        // We can skip wrap this with SSL.
         char sig = kOOBReset;
         ssize_t len = all_links[i].sock.Send(&sig, sizeof(sig), MSG_OOB);
         // error will be filtered in next loop
@@ -498,7 +500,7 @@ AllreduceRobust::ReturnType AllreduceRobust::TryResetLinks(void) {
       }
       if (all_links[i].size_write == 1) {
         char sig = kResetMark;
-        ssize_t len = all_links[i].sock.Send(&sig, sizeof(sig));
+        ssize_t len = all_links[i].sock.SSLSend(&sig, sizeof(sig));
         if (len == sizeof(sig)) all_links[i].size_write = 2;
       }
     }
@@ -538,7 +540,7 @@ AllreduceRobust::ReturnType AllreduceRobust::TryResetLinks(void) {
           all_links[i].size_read = 1;
         } else {
           // no at mark, read and discard data
-          ssize_t len = all_links[i].sock.Recv(all_links[i].buffer_head, all_links[i].buffer_size);
+          ssize_t len = all_links[i].sock.SSLRecv(all_links[i].buffer_head, all_links[i].buffer_size);
           if (all_links[i].sock.AtMark()) all_links[i].size_read = 1;
           // zero length, remote closed the connection, close socket
           if (len == 0) all_links[i].sock.Close();
@@ -551,7 +553,7 @@ AllreduceRobust::ReturnType AllreduceRobust::TryResetLinks(void) {
     if (!all_links[i].sock.BadSocket()) {
       char oob_mark;
       all_links[i].sock.SetNonBlock(false);
-      ssize_t len = all_links[i].sock.Recv(&oob_mark, sizeof(oob_mark), MSG_WAITALL);
+      ssize_t len = all_links[i].sock.SSLRecv(&oob_mark, sizeof(oob_mark));
       if (len == 0) {
         all_links[i].sock.Close(); continue;
       } else if (len > 0) {
@@ -563,7 +565,7 @@ AllreduceRobust::ReturnType AllreduceRobust::TryResetLinks(void) {
       // send out ack
       char ack = kResetAck;
       while (true) {
-        len = all_links[i].sock.Send(&ack, sizeof(ack));
+        len = all_links[i].sock.SSLSend(&ack, sizeof(ack));
         if (len == sizeof(ack)) break;
         if (len == -1) {
           if (errno != EAGAIN && errno != EWOULDBLOCK) break;
@@ -575,7 +577,7 @@ AllreduceRobust::ReturnType AllreduceRobust::TryResetLinks(void) {
   for (int i = 0; i < nlink; ++i) {
     if (!all_links[i].sock.BadSocket()) {
       char ack;
-      ssize_t len = all_links[i].sock.Recv(&ack, sizeof(ack), MSG_WAITALL);
+      ssize_t len = all_links[i].sock.SSLRecv(&ack, sizeof(ack));
       if (len == 0) {
         all_links[i].sock.Close(); continue;
       } else if (len > 0) {
@@ -846,7 +848,7 @@ AllreduceRobust::TryRecoverData(RecoverType role,
           size_t start = links[i].size_write % buffer_size;
           // send out data from ring buffer
           size_t nwrite = std::min(buffer_size - start, links[pid].size_read - links[i].size_write);
-          ssize_t len = links[i].sock.Send(links[pid].buffer_head + start, nwrite);
+          ssize_t len = links[i].sock.SSLSend(links[pid].buffer_head + start, nwrite);
           if (len != -1) {
             links[i].size_write += len;
           } else {
@@ -1449,7 +1451,7 @@ AllreduceRobust::RingPassing(void *sendrecvbuf_,
     if (watcher.CheckExcept(prev.sock)) return ReportError(&prev, kGetExcept);
     if (watcher.CheckExcept(next.sock)) return ReportError(&next, kGetExcept);
     if (read_ptr != read_end && watcher.CheckRead(prev.sock)) {
-      ssize_t len = prev.sock.Recv(buf + read_ptr, read_end - read_ptr);
+      ssize_t len = prev.sock.SSLRecv(buf + read_ptr, read_end - read_ptr);
       if (len == 0) {
         prev.sock.Close(); return ReportError(&prev, kRecvZeroLen);
       }
@@ -1462,7 +1464,7 @@ AllreduceRobust::RingPassing(void *sendrecvbuf_,
     }
     if (write_ptr != write_end && write_ptr < read_ptr) {
       size_t nsend = std::min(write_end - write_ptr, read_ptr - write_ptr);
-      ssize_t len = next.sock.Send(buf + write_ptr, nsend);
+      ssize_t len = next.sock.SSLSend(buf + write_ptr, nsend);
       if (len != -1) {
         write_ptr += static_cast<size_t>(len);
       } else {
