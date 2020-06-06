@@ -338,7 +338,7 @@ class AllreduceBase : public IEngine {
     inline ReturnType ReadToArray(void *recvbuf_, size_t max_size) {
       if (max_size == size_read) return kSuccess;
       char *p = static_cast<char*>(recvbuf_);
-      ssize_t len = sock.SSLRecv(p + size_read, max_size - size_read);
+      ssize_t len = sock.SSLRecvAll(p + size_read, max_size - size_read);
       // length equals 0, remote disconnected
       if (len == 0) {
         sock.Close(); return kRecvZeroLen;
@@ -355,7 +355,7 @@ class AllreduceBase : public IEngine {
      */
     inline ReturnType WriteFromArray(const void *sendbuf_, size_t max_size) {
       const char *p = static_cast<const char*>(sendbuf_);
-      ssize_t len = sock.SSLSend(p + size_write, max_size - size_write);
+      ssize_t len = sock.SSLSendAll(p + size_write, max_size - size_write);
       if (len == -1) return Errno2Return();
       size_write += static_cast<size_t>(len);
       return kSuccess;
@@ -559,3 +559,4 @@ class AllreduceBase : public IEngine {
 }  // namespace engine
 }  // namespace rabit
 #endif  // RABIT_ALLREDUCE_BASE_H_
+

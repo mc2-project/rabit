@@ -630,7 +630,7 @@ AllreduceBase::TryAllreduceTree(void *sendrecvbuf_,
       // pass message up to parent, can pass data that are already been reduced
       if (size_up_out < size_up_reduce) {
         ssize_t len = links[parent_index].sock.
-            SSLSend(sendrecvbuf + size_up_out, size_up_reduce - size_up_out);
+            SSLSendAll(sendrecvbuf + size_up_out, size_up_reduce - size_up_out);
         if (len != -1) {
           size_up_out += static_cast<size_t>(len);
         } else {
@@ -644,7 +644,7 @@ AllreduceBase::TryAllreduceTree(void *sendrecvbuf_,
       if (watcher.CheckRead(links[parent_index].sock) &&
           total_size > size_down_in) {
         ssize_t len = links[parent_index].sock.
-            SSLRecv(sendrecvbuf + size_down_in, total_size - size_down_in);
+            SSLRecvAll(sendrecvbuf + size_down_in, total_size - size_down_in);
         if (len == 0) {
           links[parent_index].sock.Close();
           return ReportError(&links[parent_index], kRecvZeroLen);
@@ -987,3 +987,4 @@ AllreduceBase::TryAllreduceRing(void *sendrecvbuf_,
 }
 }  // namespace engine
 }  // namespace rabit
+
