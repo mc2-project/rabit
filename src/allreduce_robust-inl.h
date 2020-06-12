@@ -73,26 +73,26 @@ AllreduceRobust::MsgPassing(const NodeType &node_value,
     utils::PollHelper watcher;
     bool done = (stage == 3);
     for (int i = 0; i < nlink; ++i) {
-      watcher.WatchException(links[i].sock);
+      watcher.WatchException(*links[i].sock);
       switch (stage) {
         case 0:
           if (i != parent_index && links[i].size_read != sizeof(EdgeType)) {
-            watcher.WatchRead(links[i].sock);
+            watcher.WatchRead(*links[i].sock);
           }
           break;
         case 1:
           if (i == parent_index) {
-            watcher.WatchWrite(links[i].sock);
+            watcher.WatchWrite(*links[i].sock);
           }
           break;
         case 2:
           if (i == parent_index) {
-            watcher.WatchRead(links[i].sock);
+            watcher.WatchRead(*links[i].sock);
           }
           break;
         case 3:
           if (i != parent_index && links[i].size_write != sizeof(EdgeType)) {
-            watcher.WatchWrite(links[i].sock);
+            watcher.WatchWrite(*links[i].sock);
             done = false;
           }
           break;
@@ -105,7 +105,7 @@ AllreduceRobust::MsgPassing(const NodeType &node_value,
     // exception handling
     for (int i = 0; i < nlink; ++i) {
       // recive OOB message from some link
-      if (watcher.CheckExcept(links[i].sock)) {
+      if (watcher.CheckExcept(*links[i].sock)) {
         return ReportError(&links[i], kGetExcept);
       }
     }
@@ -114,7 +114,7 @@ AllreduceRobust::MsgPassing(const NodeType &node_value,
       // read data from childs
       for (int i = 0; i < nlink; ++i) {
         if (i != parent_index) {
-          if (watcher.CheckRead(links[i].sock)) {
+          if (watcher.CheckRead(*links[i].sock)) {
             ReturnType ret = links[i].ReadToArray(&edge_in[i], sizeof(EdgeType));
             if (ret != kSuccess) return ReportError(&links[i], ret);
           }

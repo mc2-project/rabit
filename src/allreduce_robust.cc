@@ -328,24 +328,26 @@ AllreduceRobust::ReturnType AllreduceRobust::TryResetLinks(void) {
   // read and discard data from all channels until pass mark
   while (true) {
     for (int i = 0; i < nlink; ++i) {
-      if (all_links[i].sock.BadSocket()) continue;
+      if (all_links[i].sock->BadSocket()) continue;
       if (all_links[i].size_write == 0) {
+        // OOB data does not contains data.
+        // We can skip wrap this with SSL.
         char sig = kOOBReset;
-        ssize_t len = all_links[i].sock.Send(&sig, sizeof(sig), MSG_OOB);
+        ssize_t len = all_links[i].sock->Send(&sig, sizeof(sig), MSG_OOB);
         // error will be filtered in next loop
         if (len == sizeof(sig)) all_links[i].size_write = 1;
       }
       if (all_links[i].size_write == 1) {
         char sig = kResetMark;
-        ssize_t len = all_links[i].sock.Send(&sig, sizeof(sig));
+        ssize_t len = all_links[i].sock->SSLSend(&sig, sizeof(sig));
         if (len == sizeof(sig)) all_links[i].size_write = 2;
       }
     }
     utils::PollHelper rsel;
     bool finished = true;
     for (int i = 0; i < nlink; ++i) {
-      if (all_links[i].size_write != 2 && !all_links[i].sock.BadSocket()) {
-        rsel.WatchWrite(all_links[i].sock); finished = false;
+      if (all_links[i].size_write != 2 && !all_links[i].sock->BadSocket()) {
+        rsel.WatchWrite(*all_links[i].sock); finished = false;
       }
     }
     if (finished) break;
@@ -353,56 +355,56 @@ AllreduceRobust::ReturnType AllreduceRobust::TryResetLinks(void) {
     rsel.Poll();
   }
   for (int i = 0; i < nlink; ++i) {
-    if (!all_links[i].sock.BadSocket()) {
-      utils::PollHelper::WaitExcept(all_links[i].sock);
+    if (!all_links[i].sock->BadSocket()) {
+      utils::PollHelper::WaitExcept(*all_links[i].sock);
     }
   }
   while (true) {
     utils::PollHelper rsel;
     bool finished = true;
     for (int i = 0; i < nlink; ++i) {
-      if (all_links[i].size_read == 0 && !all_links[i].sock.BadSocket()) {
-        rsel.WatchRead(all_links[i].sock); finished = false;
+      if (all_links[i].size_read == 0 && !all_links[i].sock->BadSocket()) {
+        rsel.WatchRead(*all_links[i].sock); finished = false;
       }
     }
     if (finished) break;
     rsel.Poll();
     for (int i = 0; i < nlink; ++i) {
-      if (all_links[i].sock.BadSocket()) continue;
+      if (all_links[i].sock->BadSocket()) continue;
       if (all_links[i].size_read == 0) {
-        int atmark = all_links[i].sock.AtMark();
+        int atmark = all_links[i].sock->AtMark();
         if (atmark < 0) {
-          utils::Assert(all_links[i].sock.BadSocket(), "must already gone bad");
+          utils::Assert(all_links[i].sock->BadSocket(), "must already gone bad");
         } else if (atmark > 0) {
           all_links[i].size_read = 1;
         } else {
           // no at mark, read and discard data
-          ssize_t len = all_links[i].sock.Recv(all_links[i].buffer_head, all_links[i].buffer_size);
-          if (all_links[i].sock.AtMark()) all_links[i].size_read = 1;
+          ssize_t len = all_links[i].sock->SSLRecv(all_links[i].buffer_head, all_links[i].buffer_size);
+          if (all_links[i].sock->AtMark()) all_links[i].size_read = 1;
           // zero length, remote closed the connection, close socket
-          if (len == 0) all_links[i].sock.Close();
+          if (len == 0) all_links[i].sock->Close();
         }
       }
     }
   }
   // start synchronization, use blocking I/O to avoid select
   for (int i = 0; i < nlink; ++i) {
-    if (!all_links[i].sock.BadSocket()) {
+    if (!all_links[i].sock->BadSocket()) {
       char oob_mark;
-      all_links[i].sock.SetNonBlock(false);
-      ssize_t len = all_links[i].sock.Recv(&oob_mark, sizeof(oob_mark), MSG_WAITALL);
+      all_links[i].sock->SetNonBlock(false);
+      ssize_t len = all_links[i].sock->SSLRecv(&oob_mark, sizeof(oob_mark));
       if (len == 0) {
-        all_links[i].sock.Close(); continue;
+        all_links[i].sock->Close(); continue;
       } else if (len > 0) {
         utils::Assert(oob_mark == kResetMark, "wrong oob msg");
-        utils::Assert(all_links[i].sock.AtMark() != 1, "should already read past mark");
+        utils::Assert(all_links[i].sock->AtMark() != 1, "should already read past mark");
       } else {
         utils::Assert(errno != EAGAIN|| errno != EWOULDBLOCK, "BUG");
       }
       // send out ack
       char ack = kResetAck;
       while (true) {
-        len = all_links[i].sock.Send(&ack, sizeof(ack));
+        len = all_links[i].sock->SSLSend(&ack, sizeof(ack));
         if (len == sizeof(ack)) break;
         if (len == -1) {
           if (errno != EAGAIN && errno != EWOULDBLOCK) break;
@@ -412,22 +414,22 @@ AllreduceRobust::ReturnType AllreduceRobust::TryResetLinks(void) {
   }
   // wait all ack
   for (int i = 0; i < nlink; ++i) {
-    if (!all_links[i].sock.BadSocket()) {
+    if (!all_links[i].sock->BadSocket()) {
       char ack;
-      ssize_t len = all_links[i].sock.Recv(&ack, sizeof(ack), MSG_WAITALL);
+      ssize_t len = all_links[i].sock->SSLRecv(&ack, sizeof(ack));
       if (len == 0) {
-        all_links[i].sock.Close(); continue;
+        all_links[i].sock->Close(); continue;
       } else if (len > 0) {
         utils::Assert(ack == kResetAck, "wrong Ack MSG");
       } else {
         utils::Assert(errno != EAGAIN|| errno != EWOULDBLOCK, "BUG");
       }
       // set back to nonblock mode
-      all_links[i].sock.SetNonBlock(true);
+      all_links[i].sock->SetNonBlock(true);
     }
   }
   for (int i = 0; i < nlink; ++i) {
-    if (all_links[i].sock.BadSocket()) return kSockError;
+    if (all_links[i].sock->BadSocket()) return kSockError;
   }
   return kSuccess;
 }
@@ -445,7 +447,7 @@ bool AllreduceRobust::CheckAndRecover(ReturnType err_type) {
   {
     // simple way, shutdown all links
     for (size_t i = 0; i < all_links.size(); ++i) {
-      if (!all_links[i].sock.BadSocket()) all_links[i].sock.Close();
+      if (!all_links[i].sock->BadSocket()) all_links[i].sock->Close();
     }
     ReConnectLinks("recover");
     return false;
@@ -634,29 +636,29 @@ AllreduceRobust::TryRecoverData(RecoverType role,
     utils::PollHelper watcher;
     for (int i = 0; i < nlink; ++i) {
       if (i == recv_link && links[i].size_read != size) {
-        watcher.WatchRead(links[i].sock);
+        watcher.WatchRead(*links[i].sock);
         finished = false;
       }
       if (req_in[i] && links[i].size_write != size) {
         if (role == kHaveData ||
             (links[recv_link].size_read != links[i].size_write)) {
-          watcher.WatchWrite(links[i].sock);
+          watcher.WatchWrite(*links[i].sock);
         }
         finished = false;
       }
-      watcher.WatchException(links[i].sock);
+      watcher.WatchException(*links[i].sock);
     }
     if (finished) break;
     watcher.Poll();
     // exception handling
     for (int i = 0; i < nlink; ++i) {
-      if (watcher.CheckExcept(links[i].sock)) {
+      if (watcher.CheckExcept(*links[i].sock)) {
         return ReportError(&links[i], kGetExcept);
       }
     }
     if (role == kRequestData) {
       const int pid = recv_link;
-      if (watcher.CheckRead(links[pid].sock)) {
+      if (watcher.CheckRead(*links[pid].sock)) {
         ReturnType ret = links[pid].ReadToArray(sendrecvbuf_, size);
         if (ret != kSuccess) {
           return ReportError(&links[pid], ret);
@@ -684,7 +686,7 @@ AllreduceRobust::TryRecoverData(RecoverType role,
     if (role == kPassData) {
       const int pid = recv_link;
       const size_t buffer_size = links[pid].buffer_size;
-      if (watcher.CheckRead(links[pid].sock)) {
+      if (watcher.CheckRead(*links[pid].sock)) {
         size_t min_write = size;
         for (int i = 0; i < nlink; ++i) {
           if (req_in[i]) min_write = std::min(links[i].size_write, min_write);
@@ -700,7 +702,7 @@ AllreduceRobust::TryRecoverData(RecoverType role,
           size_t start = links[i].size_write % buffer_size;
           // send out data from ring buffer
           size_t nwrite = std::min(buffer_size - start, links[pid].size_read - links[i].size_write);
-          ssize_t len = links[i].sock.Send(links[pid].buffer_head + start, nwrite);
+          ssize_t len = links[i].sock->SSLSend(links[pid].buffer_head + start, nwrite);
           if (len != -1) {
             links[i].size_write += len;
           } else {
@@ -1156,23 +1158,23 @@ AllreduceRobust::RingPassing(void *sendrecvbuf_,
     bool finished = true;
     utils::PollHelper watcher;
     if (read_ptr != read_end) {
-      watcher.WatchRead(prev.sock);
+      watcher.WatchRead(*prev.sock);
       finished = false;
     }
     if (write_ptr < read_ptr && write_ptr != write_end) {
-      watcher.WatchWrite(next.sock);
+      watcher.WatchWrite(*next.sock);
       finished = false;
     }
-    watcher.WatchException(prev.sock);
-    watcher.WatchException(next.sock);
+    watcher.WatchException(*prev.sock);
+    watcher.WatchException(*next.sock);
     if (finished) break;
     watcher.Poll();
-    if (watcher.CheckExcept(prev.sock)) return ReportError(&prev, kGetExcept);
-    if (watcher.CheckExcept(next.sock)) return ReportError(&next, kGetExcept);
-    if (read_ptr != read_end && watcher.CheckRead(prev.sock)) {
-      ssize_t len = prev.sock.Recv(buf + read_ptr, read_end - read_ptr);
+    if (watcher.CheckExcept(*prev.sock)) return ReportError(&prev, kGetExcept);
+    if (watcher.CheckExcept(*next.sock)) return ReportError(&next, kGetExcept);
+    if (read_ptr != read_end && watcher.CheckRead(*prev.sock)) {
+      ssize_t len = prev.sock->SSLRecv(buf + read_ptr, read_end - read_ptr);
       if (len == 0) {
-        prev.sock.Close(); return ReportError(&prev, kRecvZeroLen);
+        prev.sock->Close(); return ReportError(&prev, kRecvZeroLen);
       }
       if (len != -1) {
         read_ptr += static_cast<size_t>(len);
@@ -1183,7 +1185,7 @@ AllreduceRobust::RingPassing(void *sendrecvbuf_,
     }
     if (write_ptr != write_end && write_ptr < read_ptr) {
       size_t nsend = std::min(write_end - write_ptr, read_ptr - write_ptr);
-      ssize_t len = next.sock.Send(buf + write_ptr, nsend);
+      ssize_t len = next.sock->SSLSend(buf + write_ptr, nsend);
       if (len != -1) {
         write_ptr += static_cast<size_t>(len);
       } else {
