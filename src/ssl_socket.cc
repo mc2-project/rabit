@@ -1,7 +1,6 @@
-#include "ssl_socket.h"
-#include "ssl_attestation.h"
+#include "rabit/internal/ssl_socket.h"
 #include "../include/dmlc/logging.h"
-#include "certs.h"
+#include "rabit/internal/ssl_context_manager.h"
 
 namespace rabit {
 namespace utils {
@@ -28,8 +27,10 @@ bool SSLTcpSocket::ConfigureClientSSL() {
     return false;
   }
 
-#ifdef true
+#if true
+  char* cafile = (char*) SSLContextManager::instance()->get_ca_cert().c_str();
   if ((ret = mbedtls_x509_crt_parse_file( &cacert, cafile)) != 0) {
+    std::cout << "Failed to parse root certificate" << std::endl;
     print_err(ret);
     return false;
   }
@@ -55,24 +56,31 @@ bool SSLTcpSocket::ConfigureServerSSL() {
   mbedtls_x509_crt_init(&cachain);
   mbedtls_pk_init( &pkey );
 
+  char* cafile = (char*) SSLContextManager::instance()->get_ca_cert().c_str();
+  char* certfile = (char*) SSLContextManager::instance()->get_srv_cert().c_str();
+  char* keyfile = (char*) SSLContextManager::instance()->get_pkey().c_str();
+
   if ((ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, NULL, 0)) != 0) {
     print_err(ret);
     return false;
   }
 
-#ifdef true
-  if ((ret = mbedtls_x509_crt_parse_file( &srvcert, certfile)) != 0) {
-  //if ((ret = mbedtls_x509_crt_parse( &srvcert, (const unsigned char *) mbedtls_test_srv_crt_ec, mbedtls_test_srv_crt_ec_len)) != 0) {
-    print_err(ret);
-    return false;
-  }
+#if true
+  // FIXME: Do this off the critical path of a connection
   if ((ret = mbedtls_x509_crt_parse_file( &cachain, cafile)) != 0) {
-  //if ((ret = mbedtls_x509_crt_parse( &cachain, (const unsigned char *) mbedtls_test_cas_pem, mbedtls_test_cas_pem_len )) != 0) {
+    std::cout << "Failed to parse root certificate" << std::endl;
     print_err(ret);
     return false;
   }
-  if((ret = mbedtls_pk_parse_keyfile( &pk, keyfile, "")) != 0) {
-  //if ((ret = mbedtls_pk_parse_key( &pkey, (const unsigned char *) mbedtls_test_srv_key_ec, mbedtls_test_srv_key_ec_len, NULL, 0)) != 0) {
+
+  if ((ret = mbedtls_x509_crt_parse_file( &srvcert, certfile)) != 0) {
+    std::cout << "Failed to parse public key certificate" << std::endl;
+    print_err(ret);
+    return false;
+  }
+
+  if((ret = mbedtls_pk_parse_keyfile( &pkey, keyfile, "")) != 0) {
+    std::cout << "Failed to private key" << std::endl;
     print_err(ret);
     return false;
   }

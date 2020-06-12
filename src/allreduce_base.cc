@@ -12,6 +12,7 @@
 #include <cstring>
 #include "allreduce_base.h"
 #include "rabit/internal/ssl_socket.h"
+#include "rabit/internal/ssl_context_manager.h"
 
 namespace rabit {
 
@@ -52,10 +53,15 @@ AllreduceBase::AllreduceBase(void) {
   env_vars.push_back("rabit_root_cert_path");
   env_vars.push_back("rabit_cert_chain_path");
   env_vars.push_back("rabit_private_key_path");
+  // Default location for certs and client key
+  this->SetParam("rabit_root_cert_path", "/root/mc2/code/federated-xgboost/demo/basic/certs/root_cert.crt");
+  this->SetParam("rabit_cert_chain_path", "certs/cert_chain.crt");
+  this->SetParam("rabit_private_key_path", "certs/private_key.pem");
 }
 
 void AllreduceBase::InitSSL() {
-
+  rabit::utils::SSLContextManager::instance()->LoadCertAndKey(
+      cert_chain_path, private_key_path, root_cert_path);
 }
 
 // initialization function
@@ -224,6 +230,15 @@ void AllreduceBase::SetParam(const char *name, const char *val) {
   }
   if (!strcmp(name, "rabit_debug")) {
     rabit_debug = atoi(val);
+  }
+  if (!strcmp(name, "rabit_root_cert_path")) {
+    root_cert_path = val;
+  }
+  if (!strcmp(name, "rabit_cert_chain_path")) {
+    cert_chain_path = val;
+  }
+  if (!strcmp(name, "rabit_private_key_path")) {
+    private_key_path = val;
   }
 }
 /*!
