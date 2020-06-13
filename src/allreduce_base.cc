@@ -14,6 +14,7 @@
 #include <fstream>
 #include "./allreduce_base.h"
 #include "ssl_socket.h"
+#include "rabit/internal/ssl_context_manager.h"
 
 namespace rabit {
 namespace engine {
@@ -60,8 +61,8 @@ AllreduceBase::AllreduceBase(void) {
   env_vars.push_back("rabit_cert_chain_path");
   env_vars.push_back("rabit_private_key_path");
   // default certs position
-  this->SetParam("rabit_root_cert_path", "certs/root_cert.pem");
-  this->SetParam("rabit_cert_chain_path", "certs/cert_chain.pem");
+  this->SetParam("rabit_root_cert_path", "certs/root_cert.crt");
+  this->SetParam("rabit_cert_chain_path", "certs/cert_chain.crt");
   this->SetParam("rabit_private_key_path", "certs/private_key.pem");
   // also include dmlc support direct variables
   env_vars.push_back("DMLC_TASK_ID");
@@ -73,7 +74,8 @@ AllreduceBase::AllreduceBase(void) {
 }
 
 void AllreduceBase::InitSSL() {
-
+  rabit::utils::SSLContextManager::instance()->LoadCertAndKey(
+      cert_chain_path, private_key_path, root_cert_path);
 }
 
 // initialization function

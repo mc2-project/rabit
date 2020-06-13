@@ -1,6 +1,7 @@
 #include "ssl_socket.h"
 #include "../include/dmlc/logging.h"
 #include "certs.h"
+#include "rabit/internal/ssl_context_manager.h"
 
 namespace rabit {
 namespace utils {
@@ -27,27 +28,14 @@ bool SSLTcpSocket::ConfigureClientSSL() {
     return false;
   }
 
-#if true // disable certificate verification in simulation mode
-  if ((ret = mbedtls_x509_crt_parse_file( &cachain, "certs/root_cert.crt")) != 0) {
-  //if ((ret = mbedtls_x509_crt_parse( &cachain, (const unsigned char *) mbedtls_test_cas_pem, mbedtls_test_cas_pem_len )) != 0) {
+  // TODO: Move out of critical path of connection
+  char* cafile = (char*) SSLContextManager::instance()->get_ca_cert();
+  if ((ret = mbedtls_x509_crt_parse_file( &cachain, cafile)) != 0) {
     print_err(ret);
     return false;
   }
   mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_REQUIRED);
-#else
-  oe_result_t result = generate_certificate_and_pkey(&srvcert, &pkey);
-  if (result != OE_OK) {
-      printf("Generate cert failed with %s\n", oe_result_str(result));
-      return false;
-  }
-  mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_REQUIRED);
-  mbedtls_ssl_conf_verify(&conf, cert_verify_callback, NULL);
 
-  if ((ret = mbedtls_ssl_conf_own_cert(&conf, &srvcert, &pkey)) != 0) {
-      print_err(ret);
-      return false;
-  }
-#endif
   mbedtls_ssl_conf_ca_chain(&conf, &cachain, NULL);
   mbedtls_ssl_conf_rng(&conf, mbedtls_ctr_drbg_random, &ctr_drbg);
 
@@ -68,39 +56,31 @@ bool SSLTcpSocket::ConfigureServerSSL() {
   mbedtls_x509_crt_init(&cachain);
   mbedtls_pk_init( &pkey );
 
+  char* cafile = (char*) SSLContextManager::instance()->get_ca_cert();
+  char* certfile = (char*) SSLContextManager::instance()->get_srv_cert();
+  char* keyfile = (char*) SSLContextManager::instance()->get_pkey();
+
   if ((ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, NULL, 0)) != 0) {
     print_err(ret);
     return false;
   }
 
-#if true // use inbuilt certs in simulation mode
-  if ((ret = mbedtls_x509_crt_parse_file( &srvcert, "certs/cert_chain.crt")) != 0) {
-  //if ((ret = mbedtls_x509_crt_parse( &srvcert, (const unsigned char *) mbedtls_test_srv_crt_ec, mbedtls_test_srv_crt_ec_len)) != 0) {
+  // TODO: Move out of critical path of connection
+  if ((ret = mbedtls_x509_crt_parse_file( &srvcert, certfile)) != 0) {
     print_err(ret);
     return false;
   }
-  if ((ret = mbedtls_x509_crt_parse_file( &cachain, "certs/root_cert.crt")) != 0) {
-  //if ((ret = mbedtls_x509_crt_parse( &cachain, (const unsigned char *) mbedtls_test_cas_pem, mbedtls_test_cas_pem_len )) != 0) {
+  if ((ret = mbedtls_x509_crt_parse_file( &cachain, cafile)) != 0) {
     print_err(ret);
     return false;
   }
-  if((ret = mbedtls_pk_parse_keyfile( &pkey, "certs/private_key.pem", "")) != 0) {
-  //if ((ret = mbedtls_pk_parse_key( &pkey, (const unsigned char *) mbedtls_test_srv_key_ec, mbedtls_test_srv_key_ec_len, NULL, 0)) != 0) {
+  if((ret = mbedtls_pk_parse_keyfile( &pkey, keyfile, "")) != 0) {
     print_err(ret);
     return false;
   }
 
   mbedtls_ssl_conf_ca_chain(&conf, &cachain, NULL);
-#else
-  oe_result_t result = generate_certificate_and_pkey(&srvcert, &pkey);
-  if (result != OE_OK) {
-      printf("Generate cert failed with %s\n", oe_result_str(result));
-      return false;
-  }
-  mbedtls_ssl_conf_authmode(&conf, MBEDTLS_SSL_VERIFY_REQUIRED);
-  mbedtls_ssl_conf_verify(&conf, cert_verify_callback, NULL);
 
-#endif
   mbedtls_ssl_conf_ca_chain(&conf, &cacert, NULL);
   if ((ret = mbedtls_ssl_conf_own_cert(&conf, &srvcert, &pkey)) != 0) {
     print_err(ret);
